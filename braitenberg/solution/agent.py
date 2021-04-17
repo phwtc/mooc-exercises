@@ -50,6 +50,8 @@ class BraitenbergAgent:
         self.r_min = math.inf
         self.left = None
         self.right = None
+        self.count = 0
+        self.state = 'straight'
 
     def on_received_seed(self, data: int):
         np.random.seed(data)
@@ -75,6 +77,7 @@ class BraitenbergAgent:
             self.left = get_motor_left_matrix(shape)
             self.right = get_motor_right_matrix(shape)
 
+        turn = 1
         # let's take only the intensity of RGB
         P = preprocess(self.rgb)
         # now we just compute the activation of our sensors
@@ -94,11 +97,98 @@ class BraitenbergAgent:
         ls = rescale(l, self.l_min, self.l_max)
         rs = rescale(r, self.r_min, self.r_max)
 
+        self.count +=1
+
+
         gain = self.config.gain
         const = self.config.const
-        pwm_left = const + ls * gain
-        pwm_right = const + rs * gain
+        gain = 0.2
+        const = 0.1
 
+        # Use a bit more information from self.left and self.right 
+        # region (middle)
+        width = 40
+        dim = self.left.shape
+        lp = P*self.left
+        rp = P*self.right
+        cl = float(np.sum(lp[:, dim[1]//2-width:dim[1]//2 +width]) / (dim[0] * width * 2) )
+        thingleft  = float(np.sum(lp[:, dim[1]//8-width:dim[1]//8 +width]) / (dim[0] * width * 2) )
+        thingright= float(np.sum(rp[:, dim[1]//8*7-width:dim[1]//8*7 +width]) / (dim[0] * width * 2) )
+
+        if cl > 1.5 or ls > 0.9 or rs > 0.9 and not (ls > 0.9 and rs > 0.9): 
+            self.state = 'turn'
+            self.count = 0
+
+            # either turn left / right
+            if thingleft > thingright: 
+                pwm_right = 0.9
+                pwm_left  = 0.001
+            else: 
+                pwm_left= 0.9
+                pwm_right= 0.001
+
+        else: 
+
+            if self.state == 'turn': 
+                self.count += 1
+                if self.count > 6: 
+                    self.state = 'straight'
+                    self.count = 0
+                    gain = 0.2
+                    const = 0.4
+                gain = 0.1
+                const = 0.01
+            else: 
+                gain = 0.2
+                const = 0.4
+
+
+            # # 5 straight, then back to normal 
+            # if self.count > 5 and self.state == 'turn': 
+            #     self.count = 0
+            #     gain = 0.2
+            #     const = 0.1
+            #     # const = 0.2
+            #     pwm_left = const + ls * gain
+            #     pwm_right = const + rs * gain
+
+            # else: 
+            #     gain = 0.5
+            #     const = 0.1
+            #     # const = 0.1
+            pwm_left = const + ls * gain
+            pwm_right = const + rs * gain
+
+
+        # # if we are really close, move away 
+        # if abs(ls) > 0.9 or abs(rs) > 0.9:
+        #     gain = 0.5
+        #     const = 0.001
+        # if self.count < 10: 
+        #     gain = 0.01
+        #     const = 0.05
+        # pwm_left = const + ls * gain
+        # pwm_right = const + rs * gain
+
+        # if cl > 2: 
+        #     # turn around
+        #     # thing at left
+        #     if thingright < thingleft: 
+        #         pwm_right = 0.9
+        #         pwm_left  = 0.001
+        #     else: 
+        #         pwm_left= 0.9
+        #         pwm_right= 0.001
+
+        print(f'cl: {cl:0.2f}, state: {self.state}')
+        print(f'ls: {ls:0.2f}, l: {l:0.2f}, l_min: {self.l_min:0.2f}, l_max: {self.l_max:0.2f}, lc: {thingleft:0.2f}')
+        print(f'rs: {rs:0.2f}, r: {r:0.2f}, r_min: {self.r_min:0.2f}, r_max: {self.r_max:0.2f}, rc: {thingright:0.2f}')
+        print(f'gain: {gain:0.2f}, const: {const:0.2f}, left: {pwm_left:0.2f}, right: {pwm_right:0.2f}: ')
+
+        self.l_max = max(l, self.l_max, r, self.r_max)
+        self.r_max = self.l_max
+        self.l_min = min(l, self.l_min, r, self.r_min)
+        self.r_min = self.l_min
         return pwm_left, pwm_right
 
     def on_received_get_commands(self, context: Context, data: GetCommands):
