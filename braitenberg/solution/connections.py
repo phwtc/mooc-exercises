@@ -6,8 +6,8 @@ import numpy as np
 N = 40
 M = 40
 bound = 2
-centers = [ (N //2, 6*M//8), (N//8, 5*M//8) , (7*N//8, 5*M//8)]
-spread = [(3,7), (4,5), (4,5)]
+centers = [ (N //2, 5*M//8), (N//8, 5*M//8) , (7*N//8, 5*M//8)]
+spread = [(4,6), (4,6), (4,6)]
 def get_motor_left_matrix(shape: Tuple[int, int]) -> np.ndarray:
     # Implement chaser 
     # Idea 

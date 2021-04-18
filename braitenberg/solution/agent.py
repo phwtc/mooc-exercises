@@ -44,14 +44,14 @@ class BraitenbergAgent:
     def init(self, context: Context):
         context.info("init()")
         self.rgb = None
-        self.l_max = -math.inf
-        self.r_max = -math.inf
-        self.l_min = math.inf
-        self.r_min = math.inf
+        self.l_max = 50000
+        self.r_max = 50000
+        self.l_min = 0
+        self.r_min = 0
         self.left = None
         self.right = None
         self.count = 0
-        self.state = 'straight'
+        self.state = "normal"
 
     def on_received_seed(self, data: int):
         np.random.seed(data)
@@ -97,93 +97,78 @@ class BraitenbergAgent:
         ls = rescale(l, self.l_min, self.l_max)
         rs = rescale(r, self.r_min, self.r_max)
 
-        self.count +=1
-
+        self.count += 1
 
         gain = self.config.gain
         const = self.config.const
         gain = 0.2
         const = 0.1
 
-        # Use a bit more information from self.left and self.right 
+        # Use a bit more information from self.left and self.right
         # region (middle)
-        width = 40
+        width = 60
         dim = self.left.shape
-        lp = P*self.left
-        rp = P*self.right
-        cl = float(np.sum(lp[:, dim[1]//2-width:dim[1]//2 +width]) / (dim[0] * width * 2) )
-        thingleft  = float(np.sum(lp[:, dim[1]//8-width:dim[1]//8 +width]) / (dim[0] * width * 2) )
-        thingright= float(np.sum(rp[:, dim[1]//8*7-width:dim[1]//8*7 +width]) / (dim[0] * width * 2) )
+        lp = P * self.left
+        rp = P * self.right
+        vc = float(
+            np.sum(lp[:, dim[1] // 2 - width : dim[1] // 2 + width])
+            / (dim[0] * width * 2)
+        )
+        vl = float(
+            np.sum(lp[:, dim[1] // 8 - width : dim[1] // 8 + width])
+            / (dim[0] * width * 2)
+        )
+        vr = float(
+            np.sum(rp[:, dim[1] // 8 * 7 - width : dim[1] // 8 * 7 + width])
+            / (dim[0] * width * 2)
+        )
 
-        if cl > 1.5 or ls > 0.9 or rs > 0.9 and not (ls > 0.9 and rs > 0.9): 
-            self.state = 'turn'
+        threshold = 1.5
+        if vc > threshold:
+            # or (vl > threshold and vr < threshold) or ( vr > threshold and vl < threshold):
+            self.state = "fear"
             self.count = 0
 
             # either turn left / right
-            if thingleft > thingright: 
+            if vl > vr:
                 pwm_right = 0.9
-                pwm_left  = 0.001
-            else: 
-                pwm_left= 0.9
-                pwm_right= 0.001
+                pwm_left = 0.0001
+            else:
+                pwm_left = 0.9
+                pwm_right = 0.0001
 
-        else: 
+        else:
+            # Normal
+            gain = 0.1
+            const = 0.2
 
-            if self.state == 'turn': 
+            # If experience fear, go very slowly
+            if self.state == "fear":
                 self.count += 1
-                if self.count > 6: 
-                    self.state = 'straight'
+                if self.count > 6:
+                    self.state = "normal"
                     self.count = 0
-                    gain = 0.2
-                    const = 0.4
                 gain = 0.1
-                const = 0.01
-            else: 
-                gain = 0.2
-                const = 0.4
+                const = 0.001
 
+            # If duck show up on left/right
+            elif vl > 5 or vr > 5:
+                gain = 0.5
+                const = 0.001
 
-            # # 5 straight, then back to normal 
-            # if self.count > 5 and self.state == 'turn': 
-            #     self.count = 0
-            #     gain = 0.2
-            #     const = 0.1
-            #     # const = 0.2
-            #     pwm_left = const + ls * gain
-            #     pwm_right = const + rs * gain
-
-            # else: 
-            #     gain = 0.5
-            #     const = 0.1
-            #     # const = 0.1
             pwm_left = const + ls * gain
             pwm_right = const + rs * gain
 
-
-        # # if we are really close, move away 
-        # if abs(ls) > 0.9 or abs(rs) > 0.9:
-        #     gain = 0.5
-        #     const = 0.001
-        # if self.count < 10: 
-        #     gain = 0.01
-        #     const = 0.05
-        # pwm_left = const + ls * gain
-        # pwm_right = const + rs * gain
-
-        # if cl > 2: 
-        #     # turn around
-        #     # thing at left
-        #     if thingright < thingleft: 
-        #         pwm_right = 0.9
-        #         pwm_left  = 0.001
-        #     else: 
-        #         pwm_left= 0.9
-        #         pwm_right= 0.001
-
-        print(f'cl: {cl:0.2f}, state: {self.state}')
-        print(f'ls: {ls:0.2f}, l: {l:0.2f}, l_min: {self.l_min:0.2f}, l_max: {self.l_max:0.2f}, lc: {thingleft:0.2f}')
-        print(f'rs: {rs:0.2f}, r: {r:0.2f}, r_min: {self.r_min:0.2f}, r_max: {self.r_max:0.2f}, rc: {thingright:0.2f}')
-        print(f'gain: {gain:0.2f}, const: {const:0.2f}, left: {pwm_left:0.2f}, right: {pwm_right:0.2f}: ')
+        print(f"=vc: {vc:0.2f}, state: {self.state}")
+        print(
+            f"=vl: {vl:0.2f}, ls: {ls:0.2f}, l: {l:0.2f}, l_min: {self.l_min:0.2f}, l_max: {self.l_max:0.2f}"
+        )
+        print(
+            f"=vr: {vr:0.2f}, rs: {rs:0.2f}, r: {r:0.2f}, r_min: {self.r_min:0.2f}, r_max: {self.r_max:0.2f}"
+        )
+        print(
+            f"=gain: {gain:0.2f}, const: {const:0.2f}, left: {pwm_left:0.2f}, right: {pwm_right:0.2f}: "
+        )
 
         self.l_max = max(l, self.l_max, r, self.r_max)
         self.r_max = self.l_max
