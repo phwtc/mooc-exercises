@@ -266,6 +266,7 @@ class EncoderPoseNode(DTROS):
 
         # self.loging to screen for debugging purposes
         self.log("              ODOMETRY             ")
+        self.log(f"v_0: {self.v_0}, ")
         # self.log(f"Baseline : {self.baseline}   R: {self.R}")
         self.log(f"Theta : {np.rad2deg(self.theta_curr)} deg,  x: {self.x_curr} m,  y: {self.y_curr} m")
         self.log(

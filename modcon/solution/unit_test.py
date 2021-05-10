@@ -334,7 +334,7 @@ class UnitTestPositionPID:
         plt.title(title)
         plt.xlabel(x_label)
         plt.ylabel(y_label)
-        plt.xticks(np.arange(0, len(u_l) + 1, 1))
+        plt.xticks(np.arange(0, len(u_l) + 1, 5))
 
         # plot the control inputs
         plt.axis(
