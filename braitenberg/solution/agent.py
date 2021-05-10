@@ -44,12 +44,14 @@ class BraitenbergAgent:
     def init(self, context: Context):
         context.info("init()")
         self.rgb = None
-        self.l_max = -math.inf
-        self.r_max = -math.inf
-        self.l_min = math.inf
-        self.r_min = math.inf
+        self.l_max = 50000
+        self.r_max = 50000
+        self.l_min = 0
+        self.r_min = 0
         self.left = None
         self.right = None
+        self.count = 0
+        self.state = "normal"
 
     def on_received_seed(self, data: int):
         np.random.seed(data)
@@ -75,6 +77,7 @@ class BraitenbergAgent:
             self.left = get_motor_left_matrix(shape)
             self.right = get_motor_right_matrix(shape)
 
+        turn = 1
         # let's take only the intensity of RGB
         P = preprocess(self.rgb)
         # now we just compute the activation of our sensors
@@ -94,11 +97,83 @@ class BraitenbergAgent:
         ls = rescale(l, self.l_min, self.l_max)
         rs = rescale(r, self.r_min, self.r_max)
 
+        self.count += 1
+
         gain = self.config.gain
         const = self.config.const
-        pwm_left = const + ls * gain
-        pwm_right = const + rs * gain
+        gain = 0.2
+        const = 0.1
 
+        # Use a bit more information from self.left and self.right
+        # region (middle)
+        width = 60
+        dim = self.left.shape
+        lp = P * self.left
+        rp = P * self.right
+        vc = float(
+            np.sum(lp[:, dim[1] // 2 - width : dim[1] // 2 + width])
+            / (dim[0] * width * 2)
+        )
+        vl = float(
+            np.sum(lp[:, dim[1] // 8 - width : dim[1] // 8 + width])
+            / (dim[0] * width * 2)
+        )
+        vr = float(
+            np.sum(rp[:, dim[1] // 8 * 7 - width : dim[1] // 8 * 7 + width])
+            / (dim[0] * width * 2)
+        )
+
+        threshold = 1.5
+        if vc > threshold:
+            # or (vl > threshold and vr < threshold) or ( vr > threshold and vl < threshold):
+            self.state = "fear"
+            self.count = 0
+
+            # either turn left / right
+            if vl > vr:
+                pwm_right = 0.9
+                pwm_left = 0.0001
+            else:
+                pwm_left = 0.9
+                pwm_right = 0.0001
+
+        else:
+            # Normal
+            gain = 0.1
+            const = 0.2
+
+            # If experience fear, go very slowly
+            if self.state == "fear":
+                self.count += 1
+                if self.count > 6:
+                    self.state = "normal"
+                    self.count = 0
+                gain = 0.1
+                const = 0.001
+
+            # If duck show up on left/right
+            elif vl > 5 or vr > 5:
+                gain = 0.5
+                const = 0.001
+
+            pwm_left = const + ls * gain
+            pwm_right = const + rs * gain
+
+        print(f"=vc: {vc:0.2f}, state: {self.state}")
+        print(
+            f"=vl: {vl:0.2f}, ls: {ls:0.2f}, l: {l:0.2f}, l_min: {self.l_min:0.2f}, l_max: {self.l_max:0.2f}"
+        )
+        print(
+            f"=vr: {vr:0.2f}, rs: {rs:0.2f}, r: {r:0.2f}, r_min: {self.r_min:0.2f}, r_max: {self.r_max:0.2f}"
+        )
+        print(
+            f"=gain: {gain:0.2f}, const: {const:0.2f}, left: {pwm_left:0.2f}, right: {pwm_right:0.2f}: "
+        )
+
+        self.l_max = max(l, self.l_max, r, self.r_max)
+        self.r_max = self.l_max
+        self.l_min = min(l, self.l_min, r, self.r_min)
+        self.r_min = self.l_min
         return pwm_left, pwm_right
 
     def on_received_get_commands(self, context: Context, data: GetCommands):
